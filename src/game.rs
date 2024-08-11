@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     browser,
-    engine::{self, Game, Rect, Renderer},
+    engine::{self, Game, KeyState, Point, Rect, Renderer},
 };
 use anyhow::{Ok, Result};
 use async_trait::async_trait;
@@ -32,6 +32,7 @@ pub struct WalkTheDog {
     image: Option<HtmlImageElement>,
     sheet: Option<Sheet>,
     frame: u8,
+    position: Point,
 }
 
 #[async_trait(?Send)]
@@ -45,15 +46,27 @@ impl Game for WalkTheDog {
             image,
             sheet,
             frame: self.frame,
+            position: self.position,
         }))
     }
 
-    fn update(&mut self) {
-        if self.frame < 23 {
-            self.frame += 1;
-        } else {
-            self.frame = 0;
+    fn update(&mut self, keystate: &KeyState) {
+        let mut velocity = Point { x: 0, y: 0 };
+        if keystate.is_pressed("ArrowDown") {
+            velocity.y += 3;
         }
+        if keystate.is_pressed("ArrowUp") {
+            velocity.y -= 3;
+        }
+        if keystate.is_pressed("ArrowRight") {
+            velocity.x += 3;
+        }
+        if keystate.is_pressed("ArrowLeft") {
+            velocity.x -= 3;
+        }
+
+        self.position.x += velocity.x;
+        self.position.y += velocity.y;
     }
 
     fn draw(&self, renderer: &Renderer) {
@@ -82,8 +95,8 @@ impl Game for WalkTheDog {
                     height: sprite.frame.h.into(),
                 },
                 &Rect {
-                    x: 300.0,
-                    y: 300.0,
+                    x: self.position.x.into(),
+                    y: self.position.y.into(),
                     width: sprite.frame.w.into(),
                     height: sprite.frame.h.into(),
                 },
@@ -98,6 +111,7 @@ impl WalkTheDog {
             image: None,
             sheet: None,
             frame: 0,
+            position: Point { x: 0, y: 0 },
         }
     }
 }
