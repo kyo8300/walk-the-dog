@@ -63,7 +63,7 @@ impl KeyState {
     }
 
     fn set_released(&mut self, code: &str) {
-        self.pressed_keys.remove(code.into());
+        self.pressed_keys.remove(code);
     }
 }
 
@@ -149,6 +149,14 @@ impl Renderer {
         self.context
             .draw_image_with_html_image_element(image, position.x.into(), position.y.into())
             .expect("Drawing is throwing exceptions! Unrecoverable error.");
+    }
+
+    pub fn draw_text(&self, text: &str, location: &Point) -> Result<()> {
+        self.context.set_font("16pt serif");
+        self.context
+            .fill_text(text, location.x.into(), location.y.into())
+            .map_err(|err| anyhow!("Error filling text {:#?}", err))?;
+        Ok(())
     }
 }
 
@@ -242,13 +250,21 @@ impl GameLoop {
         *g.borrow_mut() = Some(browser::create_raf_closure(move |perf: f64| {
             process_input(&mut keystate, &mut keyevent_receiver);
 
-            game_loop.accumulated_delta += (perf - game_loop.last_frame) as f32;
+            let frame_time = perf - game_loop.last_frame;
+            game_loop.accumulated_delta += frame_time as f32;
+
             while game_loop.accumulated_delta > FRAME_SIZE {
                 game.update(&keystate);
                 game_loop.accumulated_delta -= FRAME_SIZE;
             }
             game_loop.last_frame = perf;
             game.draw(&renderer);
+
+            if cfg!(debug_assertions) {
+                unsafe {
+                    draw_frame_rate(&renderer, frame_time);
+                }
+            }
 
             browser::request_animation_frame(f.borrow().as_ref().unwrap());
         }));
@@ -358,9 +374,31 @@ impl Audio {
     }
 }
 
+unsafe fn draw_frame_rate(renderer: &Renderer, frame_time: f64) {
+    static mut FRAMES_COUNTED: i32 = 0;
+    static mut TOTAL_FRAME_TIME: f64 = 0.0;
+    static mut FRAME_RATE: i32 = 0;
+
+    FRAMES_COUNTED += 1;
+    TOTAL_FRAME_TIME += frame_time;
+
+    if TOTAL_FRAME_TIME > 1000.0 {
+        FRAME_RATE = FRAMES_COUNTED;
+        TOTAL_FRAME_TIME = 0.0;
+        FRAMES_COUNTED = 0;
+    }
+
+    if let Err(err) = renderer.draw_text(
+        &format!("Frame Rate {}", FRAME_RATE),
+        &Point { x: 400, y: 100 },
+    ) {
+        error!("Could not draw text {:#?}", err);
+    }
+}
+
 #[derive(Clone)]
 pub struct Sound {
-    buffer: AudioBuffer,
+    pub buffer: AudioBuffer,
 }
 
 pub fn add_click_handler(elm: HtmlElement) -> UnboundedReceiver<()> {
@@ -371,4 +409,25 @@ pub fn add_click_handler(elm: HtmlElement) -> UnboundedReceiver<()> {
     elm.set_onclick(Some(on_click.as_ref().unchecked_ref()));
     on_click.forget();
     click_receiver
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn two_rects_that_intersect_on_the_left() {
+        let rect1 = Rect {
+            position: Point { x: 10, y: 10 },
+            height: 100,
+            width: 100,
+        };
+
+        let rect2 = Rect {
+            position: Point { x: 0, y: 10 },
+            height: 100,
+            width: 100,
+        };
+
+        assert_eq!(rect2.intersects(&rect1), true);
+    }
 }
